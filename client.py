@@ -31,9 +31,9 @@ class Client():
                 self.senderID = sender
                 
                 # Displays the received message
-                print(f"[New message from {sender}] {msg_content.strip()}\n", end="", flush=True)
+                print(f"\n[New message from {sender}] {msg_content.strip()}\n", end="", flush=True)
                 
-                print(f"\nReply to {sender} > ", end="", flush=True)
+                print(f"\nReply to {sender} > ", end="")
 
             except zmq.ZMQError:
                 break
@@ -43,6 +43,44 @@ class Client():
         print("@id message    - Send to a specific user")
         print("#chat id       - Change conversation")
         print("#exit          - Leave the current conversation\n")
+
+    def check_commands(self, msg):
+        # Special commands
+
+        if msg.startswith("#"):
+            cmd = msg[1:].lower()
+            
+            if cmd.startswith("chat "):
+                new_chat = cmd[5:].strip()
+                if new_chat:
+                    self.senderID = new_chat  # Set new sender for replies
+                    print(f"Talking to: {new_chat}")
+            elif cmd == "exit":
+                self.current_recipient = None
+                print("Left the conversation")
+                self.show_help()
+                
+        if msg.startswith("@"):
+            parts = msg[1:].split(" ", 1)
+            
+            if len(parts) == 2:
+                recipient, msg = parts
+                self.senderID = recipient  # Updates the sender for future replies
+
+                self.send_message(self.senderID, msg)
+
+            else:
+                print("Invalid format! Use '@recipient message'")
+        elif self.senderID:
+            self.send_message(self.senderID, msg)
+    
+
+    def send_message(self, senderID, msg):
+        self.dealer.send_multipart([b"", f"{senderID}:{msg}".encode()])
+        print(f"[Reply sent to {self.senderID}]\n")
+
+
+
 
 def main():
     client = Client()
@@ -55,37 +93,8 @@ def main():
     while True:
         msg = input("> ").strip()
 
-        # Special commands
-        if msg.startswith("#"):
-            cmd = msg[1:].lower()
+        client.check_commands(msg)
             
-            if cmd.startswith("chat "):
-                new_chat = cmd[5:].strip()
-                if new_chat:
-                    client.senderID = new_chat  # Set new sender for replies
-                    print(f"Talking to: {new_chat}")
-            elif cmd == "exit":
-                client.current_recipient = None
-                print("Left the conversation")
-                client.show_help()
-                
-            continue
-
-        if msg.startswith("@"):
-            parts = msg[1:].split(" ", 1)
-            
-            if len(parts) == 2:
-                recipient, msg = parts
-                client.senderID = recipient  # Updates the sender for future replies
-                client.dealer.send_multipart([b"", f"{recipient}:{msg}".encode()])
-                print(f"[Message sent to {recipient}]\n")
-            else:
-                print("Invalid format! Use '@recipient message'")
-        
-        # Reply to the last sender (if any)
-        elif client.senderID:
-            client.dealer.send_multipart([b"", f"{client.senderID}:{msg}".encode()])
-            print(f"[Reply sent to {client.senderID}]\n")
 
 if __name__ == "__main__":
     main()
