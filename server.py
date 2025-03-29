@@ -17,6 +17,7 @@ class Server():
         Function to add clients to server 
         """
         self.clients[client_id] = identity
+        print(f"New added client: {client_id}")
 
     def _get_client_id(self, identity):
         """
@@ -63,14 +64,14 @@ class Server():
         self.router.send_multipart([
         self.clients[recipient_id],
         b"",
-        f"{sender_id}:{actual_msg}".encode()])
+         f"{sender_id}:{actual_msg.strip()}".encode()  
+        ])
 
-
-        print(f"Forwarded: {sender_id} → {recipient_id}: {actual_msg}")
+        print(f"Forwarded: {sender_id} → {recipient_id}: {actual_msg.strip()}")
     
 
     def start(self):
-        print("Server started. Waiting for messages...")
+        print("Server started. Waiting for messages...\n")
         while True:
             identity, _, message = self.router.recv_multipart()
             decoded_msg = message.decode()
