@@ -19,6 +19,11 @@ class Server():
         self.clients[client_id] = identity
         print(f"New added client: {client_id}")
 
+    def _send_users_online(self, identity):
+
+        online_users = ",".join(self.clients.keys())
+        self.router.send_multipart([identity,b"",f"ONLINE_USERS: {online_users}".encode()])
+
     def _get_client_id(self, identity):
         """
         Function to get client ID
@@ -38,6 +43,17 @@ class Server():
         self._addClient(client_id, identity) 
         return True
     
+    def _process_message(self, identity, message):
+
+        if(message.startswith("REGISTER")):
+            self._handle_registration(identity, message)
+            return True
+        
+        elif(message.startswith("REQUEST_ONLINE_USERS")):
+            self._send_users_online(identity)
+        else:
+            self._handle_regular_message(identity, message)
+             
     def _handle_regular_message(self, identity, message):
         """
         Function to filter message before send it 
@@ -76,10 +92,7 @@ class Server():
             identity, _, message = self.router.recv_multipart()
             decoded_msg = message.decode()
 
-            if decoded_msg.startswith("REGISTER:"):
-                self._handle_registration(identity, decoded_msg)
-            else:
-                self._handle_regular_message(identity, decoded_msg)
+            self._process_message(identity, decoded_msg)
 
 def main():
     server = Server()

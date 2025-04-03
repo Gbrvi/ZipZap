@@ -17,23 +17,26 @@ class Client():
 
     def receive_messages(self):
         '''
-        NOTE: If you're in a conversation, and you got a new user sending a message to you, the next message will reply THIS person
+        NOTE: If you're in a conversation, and you got a new user sending a message to you, the next message will reply and get connected to this person
         '''
         while True:
             try:
                 _, message = self.dealer.recv_multipart() # Get the message
-                message_decoded = message.decode() # Decoded the message
-                sender, msg_content = message_decoded.split(":", 1)
-                sender = sender.strip()
-                msg_content = msg_content.strip()
+                decoded_message = message.decode() # Decoded the message
+               
+                if(decoded_message.startswith("ONLINE_USERS")):
+                    users = decoded_message.split(":", 1)[1].split(",")
+                    print(f"\nOnline Users:", ",".join(users) if users else "None")
+                else:
+                    sender, msg_content = decoded_message.split(":", 1)
 
-                # Update the recipient 
-                self.senderID = sender
+                    #UPTADE SenderID
+                    self.senderID = sender
                 
-                # Displays the received message
-                print(f"\n[New message from {sender}] {msg_content.strip()}\n", end="", flush=True)
-                
-                print(f"\nReply to {sender} > ", end="")
+                    # Displays the received message
+                    print(f"\n[New message from {sender}] {msg_content.strip()}\n", end="", flush=True)
+                    
+                    print(f"\nReply to {sender} > ", end="")
 
             except zmq.ZMQError:
                 break
@@ -43,6 +46,7 @@ class Client():
         print("@id message    - Send to a specific user")
         print("#chat id       - Change conversation")
         print("#exit          - Leave the current conversation\n")
+        print("#users         - Show users online")
 
     def check_commands(self, msg):
         # Special commands
@@ -60,6 +64,11 @@ class Client():
                 self.current_recipient = None
                 print("Left the conversation")
                 self.show_help()
+                self._request_users_online()
+                return None, None
+            
+            elif cmd == "users":
+                self._request_users_online()
                 return None, None
                 
         if msg.startswith("@"):
@@ -80,7 +89,8 @@ class Client():
         self.dealer.send_multipart([b"", f"{senderID}:{msg}".encode()])
         print(f"[Reply sent to {self.senderID}]\n")
 
-
+    def _request_users_online(self):
+        self.dealer.send_multipart([b"", b"REQUEST_ONLINE_USERS"])
 
 
 def main():
