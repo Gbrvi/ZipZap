@@ -51,6 +51,11 @@ class Server():
         
         elif(message.startswith("REQUEST_ONLINE_USERS")):
             self._send_users_online(identity)
+
+        elif(message.startswith("REMOVE_USER")):
+            client_ID = message.split(":")[1]
+            self._remove_user(client_ID)
+        
         else:
             self._handle_regular_message(identity, message)
              
@@ -85,6 +90,9 @@ class Server():
 
         print(f"Forwarded: {sender_id} → {recipient_id}: {actual_msg.strip()}")
     
+    def _remove_user(self, client):
+        self.clients.pop(client)
+        print(f"Usuario {client} removido com sucesso!")
 
     def start(self):
         print("Server started. Waiting for messages...\n")

@@ -42,11 +42,13 @@ class Client():
                 break
 
     def show_help(self):
-        print("\nCOMMANDS:")
-        print("@id message    - Send to a specific user")
-        print("#chat id       - Change conversation")
-        print("#exit          - Leave the current conversation\n")
-        print("#users         - Show users online")
+        print("""\n\tCOMMANDS:
+        @id message    - Send to a specific user
+        #chat id       - Change conversation
+        #exit          - Leave the current conversation
+        #close         - Close the program
+        #users         - Show users online
+        """)
 
     def check_commands(self, msg):
         # Special commands
@@ -65,6 +67,11 @@ class Client():
                 print("Left the conversation")
                 self.show_help()
                 self._request_users_online()
+                return None, None
+        
+            elif cmd == "close":
+                self._send_remove_users(self.clientID)
+                exit()
                 return None, None
             
             elif cmd == "users":
@@ -91,6 +98,9 @@ class Client():
 
     def _request_users_online(self):
         self.dealer.send_multipart([b"", b"REQUEST_ONLINE_USERS"])
+
+    def _send_remove_users(self, clientID):
+        self.dealer.send_multipart([b"", f"REMOVE_USER:{clientID}".encode()])
 
 
 def main():
