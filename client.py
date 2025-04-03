@@ -55,10 +55,12 @@ class Client():
                 if new_chat:
                     self.senderID = new_chat  # Set new sender for replies
                     print(f"Talking to: {new_chat}")
+                    return None, None
             elif cmd == "exit":
                 self.current_recipient = None
                 print("Left the conversation")
                 self.show_help()
+                return None, None
                 
         if msg.startswith("@"):
             parts = msg[1:].split(" ", 1)
@@ -66,14 +68,13 @@ class Client():
             if len(parts) == 2:
                 recipient, msg = parts
                 self.senderID = recipient  # Updates the sender for future replies
-
-                self.send_message(self.senderID, msg)
+                return (self.senderID, msg)
 
             else:
                 print("Invalid format! Use '@recipient message'")
         elif self.senderID:
-            self.send_message(self.senderID, msg)
-    
+            return (self.senderID, msg)
+
 
     def send_message(self, senderID, msg):
         self.dealer.send_multipart([b"", f"{senderID}:{msg}".encode()])
@@ -93,8 +94,10 @@ def main():
     while True:
         msg = input("> ").strip()
 
-        client.check_commands(msg)
-            
+        recipient, message = client.check_commands(msg)
+        
+        if(recipient and message):
+            client.send_message(recipient, message)
 
 if __name__ == "__main__":
     main()
