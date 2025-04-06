@@ -1,118 +1,132 @@
 import zmq
 import time
+import threading
 
 class Server():
-    # Initilize the server settings 
     def __init__(self):
-        """
-        NOTE: Initilize the attributes
-        """
-        self.context = zmq.Context() # Manage sockets
-        self.router = self.context.socket(zmq.ROUTER) # Create a ROUTER -> It tacks clients by their identity 
-        self.router.bind("tcp://*:5555") # Bind to a port
+        """Initialize server with ZeroMQ context and sockets"""
+        self.context = zmq.Context()
+        # ROUTER socket handles async client connections
+        self.router = self.context.socket(zmq.ROUTER)
+        self.router.bind("tcp://*:5555")  # Bind to port 5555
+        
+        # Data structures
+        self.clients = {}          # {client_id: socket_identity}
+        self.pending_messages = {} # {recipient_id: [messages]}
+        self.last_ping = {}        # {client_id: last_ping_time}
 
-        self.clients = {} # Client dict id -> user
-        self.last_ping = {} # Track last ping time for each client
-
-    def _addClient(self, client_id, identity):
-        """
-        Function to add clients to server 
-        """
+    def _add_client(self, client_id, identity):
+        """Register new client connection"""
         self.clients[client_id] = identity
-        self.last_ping[client_id] = time.time()  # Initialize ping time
-        print(f"New added client: {client_id}")
+        self.last_ping[client_id] = time.time()
+        print(f"New client connected: {client_id}")
 
-    def _send_users_online(self, identity):
+    def _send_online_users(self, identity):
+        """Send list of online users to requesting client"""
         online_users = ",".join(self.clients.keys())
-        self.router.send_multipart([identity,b"",f"ONLINE_USERS: {online_users}".encode()])
+        self.router.send_multipart([
+            identity, 
+            b"", 
+            f"ONLINE_USERS:{online_users}".encode()
+        ])
 
     def _get_client_id(self, identity):
-        """
-        Function to get client ID
-        """
+        """Find client ID by socket identity"""
         for client_id, stored_identity in self.clients.items():
             if stored_identity == identity:
                 return client_id
         return None
-    
-    def _handle_registration(self, identity, message):
-        """
-        Function to filter the pattern and add cliente
 
-        The pattern receive is: b'REGISTER:name 
-        """
-        client_id = message.split(":")[1].strip() # Get only client_id
-        self._addClient(client_id, identity) 
-        return True
-    
+    def _store_message(self, recipient_id, message):
+        """Store message for offline recipient"""
+
+        if recipient_id not in self.pending_messages:
+            self.pending_messages[recipient_id] = []
+
+        self.pending_messages[recipient_id].append(message)
+        # Auto-clean after 60 seconds
+        threading.Timer(60.0, self._clean_messages, args=[recipient_id]).start()
+
+    def _clean_messages(self, recipient_id):
+        """Remove expired pending messages"""
+
+        if recipient_id in self.pending_messages:
+            del self.pending_messages[recipient_id]
+
+    def _send_pending_messages(self, client_id, identity):
+        """Deliver all pending messages to reconnected client"""
+        
+        if client_id in self.pending_messages:
+            for msg in self.pending_messages[client_id]:
+                self.router.send_multipart([identity, b"", msg.encode()])
+            del self.pending_messages[client_id]
+        else:
+            self.router.send_multipart([identity, b"", b"NO_MSGS"])
+
     def _process_message(self, identity, message):
-        if(message.startswith("REGISTER")):
-            self._handle_registration(identity, message)
-            return True
-        
-        elif(message.startswith("REQUEST_ONLINE_USERS")):
-            self._send_users_online(identity)
+        """Main message processing router"""
 
-        elif(message.startswith("REMOVE_USER")):
-            client_ID = message.split(":")[1]
-            self._remove_user(client_ID)
-        
-        elif(message.startswith("PING")):
+        # Check for pending messages request
+        if message == "CHECK_MSGS":
             client_id = self._get_client_id(identity)
             if client_id:
-                self.last_ping[client_id] = time.time()
-                print(f"\n[{time.strftime('%H:%M:%S')}] [PING] Recebido de {client_id}")  # Adicionado log
-                self.router.send_multipart([identity, b"", b"PONG"])
-                print(f"[{time.strftime('%H:%M:%S')}] [PONG] Enviado para {client_id}\n")  # Adicionado log
+                self._send_pending_messages(client_id, identity)
+            return True
         
-        else:
-            self._handle_regular_message(identity, message)
-    
-    def _handle_regular_message(self, identity, message):
-        """
-        Function to filter message before send it 
-        """
-        if ":" not in message:
-            return False
+        # Handle online users request
+        elif message == "REQUEST_ONLINE_USERS":
+            self._send_online_users(identity)
+            return True
         
-        recipient_id, actual_msg = message.split(":", 1) # Pattern: "NAME:MESSAGE"
-        sender_id = self._get_client_id(identity)  # Helper to find sender's ID
-
-        if not sender_id: # Check if sender exists
-            print("Error! Unknown sender")
-            return False
-
-        if recipient_id not in self.clients: # Check if client is connected to server
-            print(f"Error! Client {recipient_id} does not exist.")
-            return False
-    
-        self._forward_message(recipient_id, sender_id, actual_msg) 
-
-    def _forward_message(self, recipient_id, sender_id, actual_msg):
-        """
-        Function to send the message [sender_id] -> [recipient_id]: [message]"""
-        self.router.send_multipart([
-        self.clients[recipient_id],
-        b"",
-         f"{sender_id}:{actual_msg.strip()}".encode()  
-        ])
-
-        print(f"Forwarded: {sender_id} → {recipient_id}: {actual_msg.strip()}")
-    
-    def _remove_user(self, client):
-        self.clients.pop(client)
-        print(f"Usuario {client} removido com sucesso!")
+        # Handle new client registration
+        elif message.startswith("REGISTER:"):
+            client_id = message.split(":")[1].strip()
+            self._add_client(client_id, identity)
+            return True
+        
+        # Handle client disconnection
+        elif message.startswith("REMOVE_USER:"):
+            client_id = message.split(":")[1]
+            if client_id in self.clients:
+                del self.clients[client_id]
+            if client_id in self.pending_messages:
+                del self.pending_messages[client_id]
+            print(f"User {client_id} removed")
+            return True
+        
+        # Handle regular messages
+        elif ":" in message:
+            recipient_id, content = message.split(":", 1)
+            sender_id = self._get_client_id(identity)
+            
+            if not sender_id:
+                print("Error: Unknown sender")
+                return False
+                
+            # Deliver immediately if recipient is online
+            if recipient_id in self.clients:
+                self.router.send_multipart([
+                    self.clients[recipient_id],
+                    b"",
+                    f"{sender_id}:{content}".encode()
+                ])
+                print(f"Delivered: {sender_id} → {recipient_id}: {content}")
+            else:
+                # Store for later delivery
+                self._store_message(recipient_id, f"{sender_id}:{content}")
+                print(f"Stored for {recipient_id}: {content}")
+            return True
+        
+        return False
 
     def start(self):
-        print("Server started. Waiting for messages...\n")
+        """Main server loop"""
+        print("Server started. Waiting for messages...")
         while True:
+            # Receive message parts [identity, delimiter, content]
             identity, _, message = self.router.recv_multipart()
-            decoded_msg = message.decode()
+            self._process_message(identity, message.decode())
 
-            self._process_message(identity, decoded_msg)
-
-def main():
+if __name__ == "__main__":
     server = Server()
     server.start()
-
-main()
