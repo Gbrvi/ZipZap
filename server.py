@@ -1,4 +1,5 @@
 import zmq
+import time
 
 class Server():
     # Initilize the server settings 
@@ -10,17 +11,18 @@ class Server():
         self.router = self.context.socket(zmq.ROUTER) # Create a ROUTER -> It tacks clients by their identity 
         self.router.bind("tcp://*:5555") # Bind to a port
 
-        self.clients = {} #Client dict id -> user
+        self.clients = {} # Client dict id -> user
+        self.last_ping = {} # Track last ping time for each client
 
     def _addClient(self, client_id, identity):
         """
         Function to add clients to server 
         """
         self.clients[client_id] = identity
+        self.last_ping[client_id] = time.time()  # Initialize ping time
         print(f"New added client: {client_id}")
 
     def _send_users_online(self, identity):
-
         online_users = ",".join(self.clients.keys())
         self.router.send_multipart([identity,b"",f"ONLINE_USERS: {online_users}".encode()])
 
@@ -44,7 +46,6 @@ class Server():
         return True
     
     def _process_message(self, identity, message):
-
         if(message.startswith("REGISTER")):
             self._handle_registration(identity, message)
             return True
@@ -56,9 +57,17 @@ class Server():
             client_ID = message.split(":")[1]
             self._remove_user(client_ID)
         
+        elif(message.startswith("PING")):
+            client_id = self._get_client_id(identity)
+            if client_id:
+                self.last_ping[client_id] = time.time()
+                print(f"\n[{time.strftime('%H:%M:%S')}] [PING] Recebido de {client_id}")  # Adicionado log
+                self.router.send_multipart([identity, b"", b"PONG"])
+                print(f"[{time.strftime('%H:%M:%S')}] [PONG] Enviado para {client_id}\n")  # Adicionado log
+        
         else:
             self._handle_regular_message(identity, message)
-             
+    
     def _handle_regular_message(self, identity, message):
         """
         Function to filter message before send it 
