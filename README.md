@@ -25,6 +25,6 @@ It's client-server application for private chat like WhatsApp. The user has your
 - Audio Message
 - GUI interface
 - Support Files
-- DataBase
+- DataBASE
 
 
